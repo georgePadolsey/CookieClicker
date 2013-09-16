@@ -1,0 +1,8 @@
+name: CookieClicker
+main: com.github.l33m4n123.cookieclicker.CookieClicker
+version: 1.2
+commands:
+   cookieclicker:
+      description: You can play CookieClicker with this
+      permission: cookie.clicker
+      aliases: cc
