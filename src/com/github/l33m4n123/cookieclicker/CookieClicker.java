@@ -1,5 +1,9 @@
 package com.github.l33m4n123.cookieclicker;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.HashMap;
 import java.util.HashSet;
 
@@ -15,12 +19,18 @@ import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerLoginEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scoreboard.DisplaySlot;
 import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.Score;
 import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.ScoreboardManager;
+
+import com.github.l33m4n123.cookieclicker.config.ConfigWriter;
+
+import code.husky.mysql.MySQL;
 
 /**
  * @author: Leeman;
@@ -29,29 +39,26 @@ public class CookieClicker extends JavaPlugin implements Listener {
 
 	// Some declarations that I am going to need
 
-	public SimpleConfigManager configManager;
+	protected ConfigWriter config = new ConfigWriter();
 
-	public SimpleConfig config;
-	public static SimpleConfig playerConfig;
+	private String host;
+	private String port;
+	private String database;
+	private String user;
+	private String password;
 
-	private long cursorCurrentPrize;
-	private long grandmaCurrentPrize;
-	private long farmCurrentPrize;
-	private long factoryCurrentPrize;
-	private long mineCurrentPrize;
-	private long shipmentCurrentPrize;
-	private long alchemyCurrentPrize;
-	private long portalCurrentPrize;
-	private long timeCurrentPrize;
-	private long antimatterCurrentPrize;
-	private double cookiePerSecond = 0;
+	private Plugin plugin = this;
+	private MySQL mySQL;
+	private Connection c = null;
+
 	private double growth;
-	static int cookies;
 
-	private Objective objective;
-	private Scoreboard board;
+	ScoreboardManager manager;
+	Scoreboard board;
+
+	private static HashSet<String> scoreBoard = new HashSet<String>();
 	private HashMap<String, Score> cookie = new HashMap<String, Score>();
-	private HashMap<String, Score> cursor = new HashMap<String, Score>();
+	private HashMap<String, Score> cursors = new HashMap<String, Score>();
 	private HashMap<String, Score> grandma = new HashMap<String, Score>();
 	private HashMap<String, Score> farm = new HashMap<String, Score>();
 	private HashMap<String, Score> factory = new HashMap<String, Score>();
@@ -62,212 +69,149 @@ public class CookieClicker extends JavaPlugin implements Listener {
 	private HashMap<String, Score> time = new HashMap<String, Score>();
 	private HashMap<String, Score> antimatter = new HashMap<String, Score>();
 
-	static HashSet<String> scoreBoard = new HashSet<String>();
+	static HashSet<String> score = new HashSet<String>();
 
 	@Override
 	public void onEnable() {
 		// TODO Insert logic to be performed when the plugin is enabled
+		manager = Bukkit.getScoreboardManager();
 		getServer().getPluginManager().registerEvents(this, this);
+		config.configWriter(this);
 
-		configWriter();
+		this.host = config.getString("Database.host");
+		this.port = config.getString("Database.port");
+		this.database = config.getString("Database.database");
+		this.user = config.getString("Database.user");
+		this.password = config.getString("Database.password");
 
+		mySQL = new MySQL(this.plugin, this.host, this.port, this.database,
+				this.user, this.password);
+		c = mySQL.openConnection();
+
+		this.growth = Double.parseDouble(config.getString("Price.growth"));
+
+		try {
+			Statement statement = c.createStatement();
+			statement
+					.executeUpdate("CREATE TABLE IF NOT EXISTS"
+							+ " `CookieClicker`"
+							+ "(`Name` varchar(28),"
+							+ " `cookies` varchar(28), `cursors` varchar(28),"
+							+ "`grandma` varchar(28), `farm` varchar(28),"
+							+ "`factory` varchar(28), `mine` varchar(28),"
+							+ "`shipment` varchar(28), `alchemy` varchar(28),"
+							+ "`portal` varchar(28), `timeMachine` varchar(28), `antimatter` varchar(28),"
+							+ "`cursorPrice` varchar(28),"
+							+ "`grandmaPrice` varchar(28), `farmPrice` varchar(28),"
+							+ "`factoryPrice` varchar(28), `minePrice` varchar(28),"
+							+ "`shipmentPrice` varchar(28), `alchemyPrice` varchar(28),"
+							+ "`portalPrice` varchar(28), `timeMachinePrice` varchar(28), `antimatterPrice` varchar(28),"
+							+ "`cookiePerSeconds` varchar(28),"
+							+ "PRIMARY KEY (`cookies`), UNIQUE KEY `Name` (`Name`))");
+		} catch (SQLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		cookieCheck();
 
 	}
 
-	// Writes the default config.yml
-	public void configWriter() {
-
-		String[] header = {
-				"Welcome to the",
-				"Configfile for Cookieclicker",
-				"If you got any issues shoot me a pm",
-				"on forums.bukkit.org",
-				"",
-				"",
-				"This config file",
-				"was created via the code",
-				"by Log-out on Bukkit",
-				"http://forums.bukkit.org/threads/tut-custom-yaml-configurations-with-comments.142592/" };
-		String[] comment = { "Starting Price for the individual upgrades.",
-				"The AntimatterCondenser Price MUST be saved",
-				"as a String or you will get issues" };
-		String[] comment2 = { "The grow Value will control",
-				"how strong the prices grow", "The other Value control",
-				"The Cookie per second", "the individual upgrade gives" };
-
-		this.configManager = new SimpleConfigManager(this);
-
-		this.config = configManager.getNewConfig("config.yml", header);
-
-		this.config.set("Cookie.prices.Cursor", 15, comment);
-		this.config.set("Cookie.prices.Grandma", 100);
-		this.config.set("Cookie.prices.Farm", 500);
-		this.config.set("Cookie.prices.Factory", 3000);
-		this.config.set("Cookie.prices.Mine", 10000);
-		this.config.set("Cookie.prices.Shipment", 40000);
-		this.config.set("Cookie.prices.AlchemyLab", 200000);
-		this.config.set("Cookie.prices.Portal", 1666666);
-		this.config.set("Cookie.prices.TimeMachine", 123456789);
-		this.config.set("Cookie.prices.AntimatterCondenser", "3999999999");
-
-		this.config.set("Price.growth", 1.15d, comment2);
-
-		this.config.set("Price.boost.Cursor", 0.1d);
-		this.config.set("Price.boost.Grandma", 0.5d);
-		this.config.set("Price.boost.Farm", 2);
-		this.config.set("Price.boost.Factory", 10);
-		this.config.set("Price.boost.Mine", 40);
-		this.config.set("Price.boost.Shipment", 100);
-		this.config.set("Price.boost.AlchemyLab", 400);
-		this.config.set("Price.boost.Portal", 6666);
-		this.config.set("Price.boost.TimeMachine", 98765);
-		this.config.set("Price.boost.AntimatterCondenser", 999999);
-		this.config.saveConfig();
-	}
-
-	// Writes a new player config when a player logs in
+	// Adds the player into the database
 	@EventHandler
 	public void onPlayerLogin(PlayerLoginEvent evt) {
+		final Player player = evt.getPlayer();
+		this.getServer().getScheduler()
+				.scheduleSyncDelayedTask(this, new BukkitRunnable() {
 
-		board = Bukkit.getServer().getScoreboardManager().getNewScoreboard();
-		objective = board.registerNewObjective("test", "dummy");
-		objective.setDisplayName("CookieClicker");
-		objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+					@Override
+					public void run() {
+						player.setScoreboard(Bukkit.getServer()
+								.getScoreboardManager().getNewScoreboard());
 
-		String[] header = { "This File",
-				"stores " + evt.getPlayer().getName() + " cookie", "stats" };
+					}
+				}, 1L);
 
-		String[] comment = { "Prices for this player.",
-				"do not touch this unless", "you want to give this specific",
-				"player a boost/ruin his score" };
-
-		this.configManager = new SimpleConfigManager(this);
-		playerConfig = configManager.getNewConfig("players/"
-				+ evt.getPlayer().getName() + ".cookie", header);
-
-		playerConfig.set("Cookie.Cookies", 0, comment);
-
-		playerConfig.set("Cookie.Cookie.Per.Second", 0);
-
-		playerConfig.set("Cookie.upgrades.Cursor", 0);
-		playerConfig.set("Cookie.upgrades.Grandma", 0);
-		playerConfig.set("Cookie.upgrades.Farm", 0);
-		playerConfig.set("Cookie.upgrades.Factory", 0);
-		playerConfig.set("Cookie.upgrades.Mine", 0);
-		playerConfig.set("Cookie.upgrades.Shipment", 0);
-		playerConfig.set("Cookie.upgrades.AlchemyLab", 0);
-		playerConfig.set("Cookie.upgrades.Portal", 0);
-		playerConfig.set("Cookie.upgrades.TimeMachine", 0);
-		playerConfig.set("Cookie.upgrades.AntimatterCondenser", 0);
-
-		playerConfig.set("Cookie.prices.Cursor",
-				config.getInt("Cookie.prices.Cursor"));
-		playerConfig.set("Cookie.prices.Grandma",
-				config.getInt("Cookie.prices.Grandma"));
-		playerConfig.set("Cookie.prices.Farm",
-				config.getInt("Cookie.prices.Farm"));
-		playerConfig.set("Cookies.prices.Factory",
-				config.getInt("Cookie.prices.Factory"));
-		playerConfig.set("Cookie.prices.Mine",
-				config.getInt("Cookie.prices.Mine"));
-		playerConfig.set("Cookie.prices.Shipment",
-				config.getInt("Cookie.prices.Shipment"));
-		playerConfig.set("Cookie.prices.AlchemyLab",
-				config.getInt("Cookie.prices.AlchemyLab"));
-		playerConfig.set("Cookie.prices.Portal",
-				config.getInt("Cookie.prices.Portal"));
-		playerConfig.set("Cookie.prices.TimeMachine",
-				config.getInt("Cookie.prices.TimeMachine"));
-		playerConfig.set("Cookie.prices.AntimatterCondenser",
-				config.getString("Cookie.prices.AntimatterCondenser"));
-		playerConfig.saveConfig();
-
-		pricesCheck();
+		try {
+			playerWriter(evt.getPlayer().getName());
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
 	}
 
 	@EventHandler
 	public void onPlayerLogout(PlayerQuitEvent evt) {
-		if (scoreBoard.contains(evt.getPlayer().getName())) {
-			scoreBoard.remove(evt.getPlayer().getName());
+		Player player = evt.getPlayer();
+		player.setScoreboard(Bukkit.getServer().getScoreboardManager()
+				.getNewScoreboard());
+		if (scoreBoard.contains(player.getName())) {
+			scoreBoard.remove(player.getName());
 		}
 	}
 
-	public void pricesCheck() {
-		this.cursorCurrentPrize = playerConfig.getInt("Cookie.prices.Cursor");
-		this.grandmaCurrentPrize = playerConfig.getInt("Cookie.prices.Grandma");
-		this.farmCurrentPrize = playerConfig.getInt("Cookie.prices.Farm");
-		this.factoryCurrentPrize = playerConfig.getInt("Cookie.prices.Factory");
-		this.mineCurrentPrize = playerConfig.getInt("Cookie.prices.Mine");
-		this.shipmentCurrentPrize = playerConfig
-				.getInt("Cookie.prices.Shipment");
-		this.alchemyCurrentPrize = playerConfig
-				.getInt("Cookie.prices.AlchemyLab");
-		this.portalCurrentPrize = playerConfig.getInt("Cookie.prices.Portal");
-		this.timeCurrentPrize = playerConfig
-				.getInt("Cookie.prices.TimeMachine");
-		this.antimatterCurrentPrize = Long.valueOf(playerConfig
-				.getString("Cookie.prices.AntimatterCondenser"));
-
-		this.growth = config.getDouble("Price.growth");
-	}
-
 	public void cookieCheck() {
-		 this.getServer().getScheduler()
-		 .scheduleSyncRepeatingTask(this, new BukkitRunnable() {
-		
-		 public void run() {
-		 // Do stuff
-		
-		 for (Player player : getServer().getOnlinePlayers()) {
-		 if (CookieClicker.scoreBoard.contains(player.getName())) {
-		
-		 int roundCps = (int) Math
-		 .round(cookiePerSecond * 10);
-		 int newScore = cookie.get(player.getName()).getScore() + roundCps;
-		 cookie.get(player.getName()).setScore(newScore);
-		 CookieClicker.cookies = newScore;
-		 updatePlayerFile(player.getName());
-		 }
-		 }
-		 }
-		 }, 200L, 200L);
-	}
+		this.getServer().getScheduler()
+				.scheduleSyncRepeatingTask(this, new BukkitRunnable() {
 
-	public void updatePlayerFile(String player) {
+					public void run() {
+						// Do stuff
 
-		String[] comment = { "Prices for this player.",
-				"do not touch this unless", "you want to give this specific",
-				"player a boost/ruin his score" };
+						for (String playerName : CookieClicker.scoreBoard) {
 
-		playerConfig.set("Cookie.Cookies", cookies, comment);
+							Statement statement;
+							String cookiesString = "";
+							double cookiePerSecond = 0;
 
-		playerConfig.set("Cookie.Cookie.Per.Second", this.cookiePerSecond);
+							// Get current CPS and current cookies from Database
+							// to give cookies
+							try {
+								statement = c.createStatement();
+								String querySelectCPS = "SELECT `cookiePerSeconds` FROM `CookieClicker` WHERE `Name`='"
+										+ playerName + "'";
+								ResultSet rs = statement
+										.executeQuery(querySelectCPS);
+								rs.next();
+								String cookiePerSecondString = rs.getString(1);
+								cookiePerSecond = Double
+										.parseDouble(cookiePerSecondString);
+								// get current cookies
+								String querySelectCookies = "SELECT `cookies` FROM `CookieClicker` WHERE `Name`='"
+										+ playerName + "'";
+								ResultSet res = statement
+										.executeQuery(querySelectCookies);
+								res.next();
 
-		playerConfig.set("Cookie.upgrades.Cursor", cursor.get(player).getScore());
-		playerConfig.set("Cookie.upgrades.Grandma", grandma.get(player).getScore());
-		playerConfig.set("Cookie.upgrades.Farm", farm.get(player).getScore());
-		playerConfig.set("Cookie.upgrades.Factory", factory.get(player).getScore());
-		playerConfig.set("Cookie.upgrades.Mine", mine.get(player).getScore());
-		playerConfig.set("Cookie.upgrades.Shipment", shipment.get(player).getScore());
-		playerConfig.set("Cookie.upgrades.AlchemyLab", alchemy.get(player).getScore());
-		playerConfig.set("Cookie.upgrades.Portal", portal.get(player).getScore());
-		playerConfig.set("Cookie.upgrades.TimeMachine", time.get(player).getScore());
-		playerConfig.set("Cookie.upgrades.AntimatterCondenser",
-				antimatter.get(player).getScore());
+								cookiesString = res.getString(1);
+							} catch (SQLException e) {
+								e.printStackTrace();
+							}
 
-		playerConfig.set("Cookie.prices.Cursor", cursorCurrentPrize);
-		playerConfig.set("Cookie.prices.Grandma", grandmaCurrentPrize);
-		playerConfig.set("Cookie.prices.Farm", farmCurrentPrize);
-		playerConfig.set("Cookies.prices.Factory", factoryCurrentPrize);
-		playerConfig.set("Cookie.prices.Mine", mineCurrentPrize);
-		playerConfig.set("Cookie.prices.Shipment", shipmentCurrentPrize);
-		playerConfig.set("Cookie.prices.AlchemyLab", alchemyCurrentPrize);
-		playerConfig.set("Cookie.prices.Portal", portalCurrentPrize);
-		playerConfig.set("Cookie.prices.TimeMachine", timeCurrentPrize);
-		playerConfig.set("Cookie.prices.AntimatterCondenser",
-				antimatterCurrentPrize);
-		playerConfig.saveConfig();
+							if (cookiePerSecond > 0.00d) {
+
+								long cookies = Long.parseLong(cookiesString);
+								int roundCps = (int) Math
+										.round(cookiePerSecond * 10);
+
+								int newScore = (int) cookies + roundCps;
+								cookie.get(playerName).setScore(newScore);
+
+								// Update Database
+								String queryUpdate = "UPDATE `CookieClicker` SET `cookies` = '"
+										+ String.valueOf(newScore)
+										+ "' WHERE `Name` ='"
+										+ playerName
+										+ "'";
+								try {
+									statement = c.createStatement();
+									statement.executeUpdate(queryUpdate);
+								} catch (SQLException e) {
+									// TODO Auto-generated catch block
+									e.printStackTrace();
+								}
+							}
+
+						}
+					}
+				}, 200L, 200L);
 	}
 
 	@Override
@@ -291,363 +235,949 @@ public class CookieClicker extends JavaPlugin implements Listener {
 				&& (sender instanceof Player)
 				&& sender.hasPermission("cookie.clicker")) {
 			Player player = (Player) sender;
-			if (args.length == 1 && args[0].equalsIgnoreCase("start")) {
+			if (args.length == 1) {
+				if (args[0].equalsIgnoreCase("leaderboard")) {
+					Statement leaderboardStatement;
+					try {
+						leaderboardStatement = c.createStatement();
 
-				player.setScoreboard(board);
+						String querySelectCookies = "SELECT `Name`, `cookies` FROM `CookieClicker` ORDER BY `cookies` DESC";
+						ResultSet cookieResult = leaderboardStatement
+								.executeQuery(querySelectCookies);
+						int i = 0;
+						while (cookieResult.next()) {
+							i++;
+							if (i > 5) {
+								break;
+							}
+							player.sendMessage(ChatColor.GREEN + "" + i + ". "
+									+ ChatColor.GOLD
+									+ cookieResult.getString(1) + ""
+									+ ChatColor.AQUA + " has: " + ChatColor.RED
+									+ "" + cookieResult.getString(2) + ""
+									+ ChatColor.WHITE + " Cookies");
+						}
 
-				if (cookie.get(player.getName()) == null) {
-					cookie.put(player.getName(), objective.getScore(Bukkit.getServer()
-							.getOfflinePlayer(ChatColor.GREEN + "Cookies: ")));
-				}
-				if (cursor.get(player.getName()) == null) {
-					cursor.put(player.getName(), objective.getScore(Bukkit.getServer()
-							.getOfflinePlayer(ChatColor.GREEN + "Cursor: ")));
-				}
-				if (grandma.get(player.getName()) == null) {
-					grandma.put(player.getName(), objective.getScore(Bukkit.getServer()
-							.getOfflinePlayer(ChatColor.GREEN + "Grandma: ")));
-				}
-				if (farm.get(player.getName()) == null) {
-					farm.put(player.getName(), objective.getScore(Bukkit.getServer()
-							.getOfflinePlayer(ChatColor.GREEN + "Farm: ")));
-				}
-				if (factory.get(player.getName()) == null) {
-					factory.put(player.getName(), objective.getScore(Bukkit.getServer()
-							.getOfflinePlayer(ChatColor.GREEN + "Factory: ")));
-				}
-				if (mine.get(player.getName()) == null) {
-					mine.put(player.getName(), objective.getScore(Bukkit.getServer()
-							.getOfflinePlayer(ChatColor.GREEN + "Mine: ")));
-				}
-				if (shipment.get(player.getName()) == null) {
-					shipment.put(player.getName(), objective.getScore(Bukkit.getServer()
-							.getOfflinePlayer(ChatColor.GREEN + "Shipment: ")));
-				}
-				if (alchemy.get(player.getName()) == null) {
-					alchemy.put(player.getName(), objective
-							.getScore(Bukkit.getServer().getOfflinePlayer(
-									ChatColor.GREEN + "AlchemyLab: ")));
-				}
-				if (portal.get(player.getName()) == null) {
-					portal.put(player.getName(), objective.getScore(Bukkit.getServer()
-							.getOfflinePlayer(ChatColor.GREEN + "Portal: ")));
-				}
-				if (time.get(player.getName()) == null) {
-					time.put(player.getName(), objective
-							.getScore(Bukkit.getServer().getOfflinePlayer(
-									ChatColor.GREEN + "TimeMachine: ")));
-				}
-				if (antimatter.get(player.getName()) == null) {
-					antimatter.put(player.getName(), objective.getScore(Bukkit
-							.getServer().getOfflinePlayer(
-									ChatColor.GREEN + "Antimatter: ")));
-				}
-
-				if (!scoreBoard.contains(player.getName())) {
-					scoreBoard.add(player.getName());
-				}
-
-				return true;
-
-			} else if (args.length == 1 && args[0].equalsIgnoreCase("stop")) {
-				player.setScoreboard(Bukkit.getServer().getScoreboardManager()
-						.getNewScoreboard());
-				if (scoreBoard.contains(player.getName())) {
-					scoreBoard.remove(player.getName());
-				}
-				return true;
-			} else if (args.length == 1 && args[0].equalsIgnoreCase("prices")) {
-
-				// get Prizes for cursos in a Integer
-				long cursorPrize = Math.round(cursorCurrentPrize);
-				String cursorSentPrize = new Long(cursorPrize).toString();
-
-				// get Prizes for grandma in a Integer
-				long grandmaPrize = Math.round(grandmaCurrentPrize);
-				String grandmaSentPrize = new Long(grandmaPrize).toString();
-
-				// get Prizes for farm in a Integer
-				long farmPrize = Math.round(farmCurrentPrize);
-				String farmSentPrize = new Long(farmPrize).toString();
-
-				// get Prizes for factory in a Integer
-				long factoryPrize = Math.round(factoryCurrentPrize);
-				String factorySentPrize = new Long(factoryPrize).toString();
-
-				// get Prizes for mine in a Integer
-				long minePrize = Math.round(mineCurrentPrize);
-				String mineSentPrize = new Long(minePrize).toString();
-
-				// get Prizes for shipment in a Integer
-				long shipmentPrize = Math.round(shipmentCurrentPrize);
-				String shipmentSentPrize = new Long(shipmentPrize).toString();
-
-				// get Prizes for alchemy in a Integer
-				long alchemyPrize = Math.round(alchemyCurrentPrize);
-				String alchemySentPrize = new Long(alchemyPrize).toString();
-
-				// get Prizes for portal in a Integer
-				long portalPrize = Math.round(portalCurrentPrize);
-				String portalSentPrize = new Long(portalPrize).toString();
-
-				// get Prizes for time machine in a Integer
-				long timePrize = Math.round(timeCurrentPrize);
-				String timeSentPrize = new Long(timePrize).toString();
-
-				// get Prizes for antimatter in a Integer
-				long antimatterPrize = antimatterCurrentPrize;
-				String antimatterSentPrize = new Long(antimatterPrize)
-						.toString();
-
-				player.sendMessage("Cursor: " + cursorSentPrize.toString());
-				player.sendMessage("Grandma: " + grandmaSentPrize.toString());
-				player.sendMessage("Farm: " + farmSentPrize.toString());
-				player.sendMessage("Factory: " + factorySentPrize.toString());
-				player.sendMessage("Mine: " + mineSentPrize.toString());
-				player.sendMessage("Shipment: " + shipmentSentPrize.toString());
-				player.sendMessage("Alchemy Lab: "
-						+ alchemySentPrize.toString());
-				player.sendMessage("Portal: " + portalSentPrize.toString());
-				player.sendMessage("Time machine: " + timeSentPrize.toString());
-				player.sendMessage("Antimatter condenser: "
-						+ antimatterSentPrize);
-				return true;
-
-			} else if (args.length == 2 && args[0].equalsIgnoreCase("buy")) {
-				if (args[1].equalsIgnoreCase("cursor")) {
-					if (cookie.get(player.getName()).getScore() >= cursorCurrentPrize) {
-						long prize = Math.round(cursorCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						cursor.get(player.getName()).setScore(cursor.get(player.getName()).getScore() + 1);
-
-						this.cursorCurrentPrize = Math
-								.round(this.cursorCurrentPrize * growth);
-
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.Cursor");
 						return true;
-					} else {
-						double prize = cursorCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
+					} catch (SQLException e) {
+						e.printStackTrace();
+					}
+				} else if (args[0].equalsIgnoreCase("start")) {
+
+					board = manager.getNewScoreboard();
+
+					int cookies = 0;
+					int cursor = 0;
+					int grandma = 0;
+					int farm = 0;
+					int factory = 0;
+					int mine = 0;
+					int shipment = 0;
+					int alchemy = 0;
+					int portal = 0;
+					int timeMachine = 0;
+					int antimatterInt = 0;
+
+					Statement cookieStatement;
+					Statement cursorStatement;
+					Statement grandmaStatement;
+					Statement farmStatement;
+					Statement factoryStatement;
+					Statement mineStatement;
+					Statement shipmentStatement;
+					Statement alchemyStatement;
+					Statement portalStatement;
+					Statement timeMachineStatement;
+					Statement antimatterStatement;
+					try {
+						cookieStatement = c.createStatement();
+						cursorStatement = c.createStatement();
+						grandmaStatement = c.createStatement();
+						farmStatement = c.createStatement();
+						factoryStatement = c.createStatement();
+						mineStatement = c.createStatement();
+						shipmentStatement = c.createStatement();
+						alchemyStatement = c.createStatement();
+						portalStatement = c.createStatement();
+						timeMachineStatement = c.createStatement();
+						antimatterStatement = c.createStatement();
+
+						String querySelectCookies = "SELECT `cookies` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectCursor = "SELECT `cursors` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectGrandma = "SELECT `grandma` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectFarm = "SELECT `farm` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectFactory = "SELECT `factory` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectMine = "SELECT `mine` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectShipment = "SELECT `shipment` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectAlchemy = "SELECT `alchemy` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectPortal = "SELECT `portal` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectTime = "SELECT `timeMachine` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+						String querySelectAntimatter = "SELECT `antimatter` FROM `CookieClicker` WHERE `Name`='"
+								+ player.getName() + "'";
+
+						ResultSet cookieResult = cookieStatement
+								.executeQuery(querySelectCookies);
+						cookieResult.next();
+						ResultSet cursorResult = cursorStatement
+								.executeQuery(querySelectCursor);
+						cursorResult.next();
+						ResultSet grandmaResult = grandmaStatement
+								.executeQuery(querySelectGrandma);
+						grandmaResult.next();
+						ResultSet farmResult = farmStatement
+								.executeQuery(querySelectFarm);
+						farmResult.next();
+						ResultSet factoryResult = factoryStatement
+								.executeQuery(querySelectFactory);
+						factoryResult.next();
+						ResultSet mineResult = mineStatement
+								.executeQuery(querySelectMine);
+						mineResult.next();
+						ResultSet shipmentResult = shipmentStatement
+								.executeQuery(querySelectShipment);
+						shipmentResult.next();
+						ResultSet alchemyResult = alchemyStatement
+								.executeQuery(querySelectAlchemy);
+						alchemyResult.next();
+						ResultSet portalResult = portalStatement
+								.executeQuery(querySelectPortal);
+						portalResult.next();
+						ResultSet timeMachineResult = timeMachineStatement
+								.executeQuery(querySelectTime);
+						timeMachineResult.next();
+						ResultSet antimatterResult = antimatterStatement
+								.executeQuery(querySelectAntimatter);
+						antimatterResult.next();
+
+						String cookieString = cookieResult.getString(1);
+						String cursorString = cursorResult.getString(1);
+						String grandmaString = grandmaResult.getString(1);
+						String farmString = farmResult.getString(1);
+						String factoryString = factoryResult.getString(1);
+						String mineString = mineResult.getString(1);
+						String shipmentString = shipmentResult.getString(1);
+						String alchemyString = alchemyResult.getString(1);
+						String portalString = portalResult.getString(1);
+						String timeMachineString = timeMachineResult
+								.getString(1);
+						String antimatterString = antimatterResult.getString(1);
+
+						cookies = Integer.parseInt(cookieString);
+						cursor = Integer.parseInt(cursorString);
+						grandma = Integer.parseInt(grandmaString);
+						farm = Integer.parseInt(farmString);
+						factory = Integer.parseInt(factoryString);
+						mine = Integer.parseInt(mineString);
+						shipment = Integer.parseInt(shipmentString);
+						alchemy = Integer.parseInt(alchemyString);
+						portal = Integer.parseInt(portalString);
+						timeMachine = Integer.parseInt(timeMachineString);
+						antimatterInt = Integer.parseInt(antimatterString);
+
+					} catch (SQLException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
 					}
 
-				} else if (args[1].equalsIgnoreCase("grandma")) {
-					if (cookie.get(player.getName()).getScore() > grandmaCurrentPrize) {
-						long prize = Math.round(grandmaCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						grandma.get(player.getName()).setScore(grandma.get(player.getName()).getScore() + 1);
-
-						this.grandmaCurrentPrize = Math
-								.round(this.grandmaCurrentPrize * this.growth);
-
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.Grandma");
-
-						return true;
-					} else {
-						double prize = grandmaCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
+					if (!scoreBoard.contains(player.getName())) {
+						scoreBoard.add(player.getName());
 					}
 
-				} else if (args[1].equalsIgnoreCase("farm")) {
-					if (cookie.get(player.getName()).getScore() > farmCurrentPrize) {
-						long prize = Math.round(farmCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						farm.get(player.getName()).setScore(farm.get(player.getName()).getScore() + 1);
-
-						this.farmCurrentPrize = Math
-								.round(this.farmCurrentPrize * this.growth);
-
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.Farm");
-
-						return true;
+					Objective objective;
+					if (board.getObjective(player.getName()) == null) {
+						objective = board.registerNewObjective(
+								player.getName(), "dummy");
 					} else {
-						double prize = farmCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
+						objective = board.getObjective(player.getName());
+					}
+					objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+					objective.setDisplayName(player.getName());
+					scoreSet(player);
+					this.cookie.get(player.getName()).setScore(cookies);
+					this.cursors.get(player.getName()).setScore(cursor);
+					this.grandma.get(player.getName()).setScore(grandma);
+					this.farm.get(player.getName()).setScore(farm);
+					this.factory.get(player.getName()).setScore(factory);
+					this.mine.get(player.getName()).setScore(mine);
+					this.shipment.get(player.getName()).setScore(shipment);
+					this.alchemy.get(player.getName()).setScore(alchemy);
+					this.portal.get(player.getName()).setScore(portal);
+					this.time.get(player.getName()).setScore(timeMachine);
+					this.antimatter.get(player.getName()).setScore(
+							antimatterInt);
+					player.setScoreboard(board);
+
+					return true;
+
+				} else if (args[0].equalsIgnoreCase("stop")) {
+					player.setScoreboard(Bukkit.getServer()
+							.getScoreboardManager().getNewScoreboard());
+					if (scoreBoard.contains(player.getName())) {
+						scoreBoard.remove(player.getName());
+					}
+					return true;
+				} else if (args[0].equalsIgnoreCase("prices")) {
+
+					String cursorCurrentPrice = getPrice("cursor", player);
+					String grandmaCurrentPrice = getPrice("grandma", player);
+					String farmCurrentPrice = getPrice("farm", player);
+					String factoryCurrentPrice = getPrice("factory", player);
+					String mineCurrentPrice = getPrice("mine", player);
+					String shipmentCurrentPrice = getPrice("shipment", player);
+					String alchemyCurrentPrice = getPrice("alchemy", player);
+					String portalCurrentPrice = getPrice("portal", player);
+					String timeCurrentPrice = getPrice("time", player);
+					String antimatterCurrentPrice = getPrice("antimatter",
+							player);
+
+					player.sendMessage(ChatColor.GREEN + "Cursor: "
+							+ ChatColor.RED + "" + cursorCurrentPrice.toString());
+					player.sendMessage(ChatColor.GREEN + "Grandma: "
+							+ ChatColor.RED + "" + grandmaCurrentPrice.toString());
+					player.sendMessage(ChatColor.GREEN + "Farm: " + ChatColor.RED + "" + farmCurrentPrice.toString());
+					player.sendMessage(ChatColor.GREEN + "Factory: "
+							+ ChatColor.RED + "" + factoryCurrentPrice.toString());
+					player.sendMessage(ChatColor.GREEN + "Mine: " + ChatColor.RED + "" + mineCurrentPrice.toString());
+					player.sendMessage(ChatColor.GREEN + "Shipment: "
+							+ ChatColor.RED + "" + shipmentCurrentPrice.toString());
+					player.sendMessage(ChatColor.GREEN + "Alchemy Lab: "
+							+ ChatColor.RED + "" + alchemyCurrentPrice.toString());
+					player.sendMessage(ChatColor.GREEN + "Portal: "
+							+ ChatColor.RED + "" +portalCurrentPrice.toString());
+					player.sendMessage(ChatColor.GREEN + "Time machine: "
+							+ ChatColor.RED + "" + timeCurrentPrice.toString());
+					player.sendMessage(ChatColor.GREEN + "Antimatter condenser: "
+							+ ChatColor.RED + "" + antimatterCurrentPrice);
+					return true;
+
+				} else if (args[0].equalsIgnoreCase("leaderboard")) {
+					/**
+					 * Print a Leaderboard with the top 10 Players + their
+					 * cookies
+					 */
+				}
+			} else if (args.length == 2) {
+				if (args[0].equalsIgnoreCase("buy")) {
+					String cps = "";
+					Statement getCps;
+
+					String getCpsFromDB = "SELECT `cookiePerSeconds` FROM `CookieClicker` WHERE `Name`='"
+							+ player.getName() + "'";
+					ResultSet getCurrentCPS;
+
+					try {
+						getCps = c.createStatement();
+
+						getCurrentCPS = getCps.executeQuery(getCpsFromDB);
+						getCurrentCPS.next();
+
+						cps = getCurrentCPS.getString(1);
+					} catch (SQLException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
 					}
 
-				} else if (args[1].equalsIgnoreCase("factory")) {
-					if (cookie.get(player.getName()).getScore() > factoryCurrentPrize) {
-						long prize = Math.round(factoryCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						factory.get(player.getName()).setScore(factory.get(player.getName()).getScore() + 1);
+					if (args[1].equalsIgnoreCase("cursor")) {
 
-						this.factoryCurrentPrize = Math
-								.round(this.factoryCurrentPrize * this.growth);
+						if (cookie.get(player.getName()).getScore() >= Integer
+								.parseInt(getPrice("cursor", player))) {
+							long prize = Math.round(Integer.parseInt(getPrice(
+									"cursor", player)));
+							int newPrice = (int) prize;
+							cookie.get(player.getName()).setScore(
+									cookie.get(player.getName()).getScore()
+											- newPrice);
+							cursors.get(player.getName())
+									.setScore(
+											cursors.get(player.getName())
+													.getScore() + 1);
 
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.Factory");
-						return true;
+							long updatedCursorPrice = Math.round(newPrice
+									* growth);
 
-					} else {
-						double prize = factoryCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
-					}
+							// sets the overall cps
+							double newCpsInt = Double.parseDouble(this.config
+									.getString("Price.boost.Cursor"))
+									+ Double.parseDouble(cps);
 
-				} else if (args[1].equalsIgnoreCase("mine")) {
-					if (cookie.get(player.getName()).getScore() > mineCurrentPrize) {
-						long prize = Math.round(mineCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						mine.get(player.getName()).setScore(mine.get(player.getName()).getScore() + 1);
+							String newCps = String.valueOf(newCpsInt);
 
-						this.mineCurrentPrize = Math
-								.round(this.mineCurrentPrize * this.growth);
+							Statement setNewCPS;
+							String setCPS = "UPDATE `CookieClicker` SET `cookiePerSeconds` =' "
+									+ newCps
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
 
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.Mine");
-						return true;
+							Statement newCursorPrice;
+							String setCursorPrice = "UPDATE `CookieClicker` SET `cursorPrice` ='"
+									+ String.valueOf(updatedCursorPrice)
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
 
-					} else {
-						double prize = mineCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
-					}
+							Statement updateCursorsStatement;
+							String updateCursors = "UPDATE `CookieClicker` SET `cursors` ='"
+									+ String.valueOf(cursors.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
 
-				} else if (args[1].equalsIgnoreCase("shipment")) {
-					if (cookie.get(player.getName()).getScore() > shipmentCurrentPrize) {
-						long prize = Math.round(shipmentCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						shipment.get(player.getName()).setScore(shipment.get(player.getName()).getScore() + 1);
+							Statement updateCookieStatement;
+							String updateCookie = "UPDATE `CookieClicker` SET `cookies` ='"
+									+ String.valueOf(cookie.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+							try {
+								setNewCPS = c.createStatement();
+								setNewCPS.executeUpdate(setCPS);
 
-						this.shipmentCurrentPrize = Math
-								.round(this.shipmentCurrentPrize * this.growth);
+								newCursorPrice = c.createStatement();
+								newCursorPrice.executeUpdate(setCursorPrice);
 
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.Shipment");
-						return true;
+								updateCursorsStatement = c.createStatement();
+								updateCursorsStatement
+										.executeUpdate(updateCursors);
 
-					} else {
-						double prize = shipmentCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
-					}
+								updateCookieStatement = c.createStatement();
+								updateCookieStatement
+										.executeUpdate(updateCookie);
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
 
-				} else if (args[1].equalsIgnoreCase("alchemylab")) {
-					if (cookie.get(player.getName()).getScore() > alchemyCurrentPrize) {
-						long prize = Math.round(alchemyCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						alchemy.get(player.getName()).setScore(alchemy.get(player.getName()).getScore() + 1);
+							return true;
+						} else {
+							player.sendMessage("Not enough cookies!");
+							return true;
+						}
 
-						this.alchemyCurrentPrize = Math
-								.round(this.alchemyCurrentPrize * this.growth);
+					} else if (args[1].equalsIgnoreCase("grandma")) {
 
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.AlchemyLab");
-						return true;
+						if (cookie.get(player.getName()).getScore() >= Integer
+								.parseInt(getPrice("grandma", player))) {
+							long prize = Math.round(Integer.parseInt(getPrice(
+									"grandma", player)));
+							int newPrice = (int) prize;
+							cookie.get(player.getName()).setScore(
+									cookie.get(player.getName()).getScore()
+											- newPrice);
+							grandma.get(player.getName())
+									.setScore(
+											grandma.get(player.getName())
+													.getScore() + 1);
 
-					} else {
-						double prize = alchemyCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
-					}
+							long updatedCursorPrice = Math.round(newPrice
+									* growth);
 
-				} else if (args[1].equalsIgnoreCase("portal")) {
-					if (cookie.get(player.getName()).getScore() >= portalCurrentPrize) {
-						long prize = Math.round(portalCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						portal.get(player.getName()).setScore(portal.get(player.getName()).getScore() + 1);
+							// sets the overall cps
+							double newCpsInt = Double.parseDouble(this.config
+									.getString("Price.boost.Grandma"))
+									+ Double.parseDouble(cps);
 
-						this.portalCurrentPrize = Math
-								.round(this.portalCurrentPrize * this.growth);
+							String newCps = String.valueOf(newCpsInt);
 
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.Portal");
+							Statement setNewCPS;
+							String setCPS = "UPDATE `CookieClicker` SET `cookiePerSeconds` =' "
+									+ newCps
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
 
-						return true;
-					} else {
-						double prize = portalCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
-					}
+							Statement newCursorPrice;
+							String setCursorPrice = "UPDATE `CookieClicker` SET `grandmaPrice` ='"
+									+ String.valueOf(updatedCursorPrice)
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
 
-				} else if (args[1].equalsIgnoreCase("timemachine")) {
-					if (cookie.get(player.getName()).getScore() > timeCurrentPrize) {
-						long prize = Math.round(timeCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						time.get(player.getName()).setScore(time.get(player.getName()).getScore() + 1);
+							Statement updateGrandmaStatement;
+							String updateGrandma = "UPDATE `CookieClicker` SET `grandma` ='"
+									+ String.valueOf(grandma.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
 
-						this.timeCurrentPrize = Math
-								.round(this.timeCurrentPrize * this.growth);
+							Statement updateCookieStatement;
+							String updateCookie = "UPDATE `CookieClicker` SET `cookies` ='"
+									+ String.valueOf(cookie.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+							try {
+								setNewCPS = c.createStatement();
+								setNewCPS.executeUpdate(setCPS);
 
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.TimeMachine");
+								newCursorPrice = c.createStatement();
+								newCursorPrice.executeUpdate(setCursorPrice);
 
-						return true;
+								updateGrandmaStatement = c.createStatement();
+								updateGrandmaStatement
+										.executeUpdate(updateGrandma);
 
-					} else {
-						double prize = timeCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
-					}
+								updateCookieStatement = c.createStatement();
+								updateCookieStatement
+										.executeUpdate(updateCookie);
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
 
-				} else if (args[1].equalsIgnoreCase("antimatter")) {
-					if (cookie.get(player.getName()).getScore() > antimatterCurrentPrize) {
-						long prize = Math.round(antimatterCurrentPrize);
-						int newPrize = (int) prize;
-						cookie.get(player.getName()).setScore(cookie.get(player.getName()).getScore() - newPrize);
-						antimatter.get(player.getName()).setScore(antimatter.get(player.getName()).getScore() + 1);
+							return true;
+						} else {
+							player.sendMessage("Not enough cookies!");
+							return true;
+						}
 
-						this.antimatterCurrentPrize = Math
-								.round(this.antimatterCurrentPrize
-										* this.growth);
+					} else if (args[1].equalsIgnoreCase("farm")) {
+						if (cookie.get(player.getName()).getScore() >= Integer
+								.parseInt(getPrice("farm", player))) {
+							long prize = Math.round(Integer.parseInt(getPrice(
+									"farm", player)));
+							int newPrice = (int) prize;
+							cookie.get(player.getName()).setScore(
+									cookie.get(player.getName()).getScore()
+											- newPrice);
+							farm.get(player.getName()).setScore(
+									farm.get(player.getName()).getScore() + 1);
 
-						// sets the overall cps
-						this.cookiePerSecond += this.config
-								.getDouble("Price.boost.AntimatterCondenser");
+							long updatedFarmPrice = Math.round(newPrice
+									* growth);
 
-						return true;
-					} else {
-						double prize = antimatterCurrentPrize;
-						Integer sentPrize = (int) prize;
-						player.sendMessage("Not enough cookies! You need "
-								+ sentPrize.toString());
-						return true;
+							// sets the overall cps
+							double newCpsInt = Double.parseDouble(this.config
+									.getString("Price.boost.Farm"))
+									+ Double.parseDouble(cps);
+
+							String newCps = String.valueOf(newCpsInt);
+
+							Statement setNewCPS;
+							String setCPS = "UPDATE `CookieClicker` SET `cookiePerSeconds` =' "
+									+ newCps
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
+
+							Statement newCursorPrice;
+							String setFarmPrice = "UPDATE `CookieClicker` SET `farmPrice` ='"
+									+ String.valueOf(updatedFarmPrice)
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateGrandmaStatement;
+							String updateGrandma = "UPDATE `CookieClicker` SET `farm` ='"
+									+ String.valueOf(farm.get(player.getName())
+											.getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
+
+							Statement updateCookieStatement;
+							String updateCookie = "UPDATE `CookieClicker` SET `cookies` ='"
+									+ String.valueOf(cookie.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+							try {
+								setNewCPS = c.createStatement();
+								setNewCPS.executeUpdate(setCPS);
+
+								newCursorPrice = c.createStatement();
+								newCursorPrice.executeUpdate(setFarmPrice);
+
+								updateGrandmaStatement = c.createStatement();
+								updateGrandmaStatement
+										.executeUpdate(updateGrandma);
+
+								updateCookieStatement = c.createStatement();
+								updateCookieStatement
+										.executeUpdate(updateCookie);
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+
+							return true;
+						} else {
+							player.sendMessage("Not enough cookies!");
+							return true;
+						}
+
+					} else if (args[1].equalsIgnoreCase("factory")) {
+						if (cookie.get(player.getName()).getScore() >= Integer
+								.parseInt(getPrice("factory", player))) {
+							long prize = Math.round(Integer.parseInt(getPrice(
+									"factory", player)));
+							int newPrice = (int) prize;
+							cookie.get(player.getName()).setScore(
+									cookie.get(player.getName()).getScore()
+											- newPrice);
+							factory.get(player.getName())
+									.setScore(
+											factory.get(player.getName())
+													.getScore() + 1);
+
+							long updatedFarmPrice = Math.round(newPrice
+									* growth);
+
+							// sets the overall cps
+							double newCpsInt = Double.parseDouble(this.config
+									.getString("Price.boost.Factory"))
+									+ Double.parseDouble(cps);
+
+							String newCps = String.valueOf(newCpsInt);
+
+							Statement setNewCPS;
+							String setCPS = "UPDATE `CookieClicker` SET `cookiePerSeconds` =' "
+									+ newCps
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
+
+							Statement newCursorPrice;
+							String setFarmPrice = "UPDATE `CookieClicker` SET `factoryPrice` ='"
+									+ String.valueOf(updatedFarmPrice)
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateGrandmaStatement;
+							String updateGrandma = "UPDATE `CookieClicker` SET `factory` ='"
+									+ String.valueOf(farm.get(player.getName())
+											.getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
+
+							Statement updateCookieStatement;
+							String updateCookie = "UPDATE `CookieClicker` SET `cookies` ='"
+									+ String.valueOf(cookie.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+							try {
+								setNewCPS = c.createStatement();
+								setNewCPS.executeUpdate(setCPS);
+
+								newCursorPrice = c.createStatement();
+								newCursorPrice.executeUpdate(setFarmPrice);
+
+								updateGrandmaStatement = c.createStatement();
+								updateGrandmaStatement
+										.executeUpdate(updateGrandma);
+
+								updateCookieStatement = c.createStatement();
+								updateCookieStatement
+										.executeUpdate(updateCookie);
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+
+							return true;
+						} else {
+							player.sendMessage("Not enough cookies!");
+							return true;
+						}
+					} else if (args[1].equalsIgnoreCase("shipment")) {
+						if (cookie.get(player.getName()).getScore() >= Integer
+								.parseInt(getPrice("shipment", player))) {
+							long prize = Math.round(Integer.parseInt(getPrice(
+									"shipment", player)));
+							int newPrice = (int) prize;
+							cookie.get(player.getName()).setScore(
+									cookie.get(player.getName()).getScore()
+											- newPrice);
+							shipment.get(player.getName())
+									.setScore(
+											shipment.get(player.getName())
+													.getScore() + 1);
+
+							long updatedCursorPrice = Math.round(newPrice
+									* growth);
+
+							// sets the overall cps
+							double newCpsInt = Double.parseDouble(this.config
+									.getString("Price.boost.Shipment"))
+									+ Double.parseDouble(cps);
+
+							String newCps = String.valueOf(newCpsInt);
+
+							Statement setNewCPS;
+							String setCPS = "UPDATE `CookieClicker` SET `cookiePerSeconds` =' "
+									+ newCps
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
+
+							Statement newCursorPrice;
+							String setCursorPrice = "UPDATE `CookieClicker` SET `shipmentPrice` ='"
+									+ String.valueOf(updatedCursorPrice)
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateGrandmaStatement;
+							String updateGrandma = "UPDATE `CookieClicker` SET `shipment` ='"
+									+ String.valueOf(grandma.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateCookieStatement;
+							String updateCookie = "UPDATE `CookieClicker` SET `cookies` ='"
+									+ String.valueOf(cookie.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+							try {
+								setNewCPS = c.createStatement();
+								setNewCPS.executeUpdate(setCPS);
+
+								newCursorPrice = c.createStatement();
+								newCursorPrice.executeUpdate(setCursorPrice);
+
+								updateGrandmaStatement = c.createStatement();
+								updateGrandmaStatement
+										.executeUpdate(updateGrandma);
+
+								updateCookieStatement = c.createStatement();
+								updateCookieStatement
+										.executeUpdate(updateCookie);
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+
+							return true;
+						} else {
+							player.sendMessage("Not enough cookies!");
+							return true;
+						}
+					} else if (args[1].equalsIgnoreCase("alchemylab")) {
+						if (cookie.get(player.getName()).getScore() >= Integer
+								.parseInt(getPrice("alchemy", player))) {
+							long prize = Math.round(Integer.parseInt(getPrice(
+									"alchemy", player)));
+							int newPrice = (int) prize;
+							cookie.get(player.getName()).setScore(
+									cookie.get(player.getName()).getScore()
+											- newPrice);
+							alchemy.get(player.getName())
+									.setScore(
+											grandma.get(player.getName())
+													.getScore() + 1);
+
+							long updatedCursorPrice = Math.round(newPrice
+									* growth);
+
+							// sets the overall cps
+							double newCpsInt = Double.parseDouble(this.config
+									.getString("Price.boost.AlchemyLab"))
+									+ Double.parseDouble(cps);
+
+							String newCps = String.valueOf(newCpsInt);
+
+							Statement setNewCPS;
+							String setCPS = "UPDATE `CookieClicker` SET `cookiePerSeconds` =' "
+									+ newCps
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
+
+							Statement newCursorPrice;
+							String setCursorPrice = "UPDATE `CookieClicker` SET `alchemyPrice` ='"
+									+ String.valueOf(updatedCursorPrice)
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateGrandmaStatement;
+							String updateGrandma = "UPDATE `CookieClicker` SET `alchemy` ='"
+									+ String.valueOf(grandma.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateCookieStatement;
+							String updateCookie = "UPDATE `CookieClicker` SET `cookies` ='"
+									+ String.valueOf(cookie.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+							try {
+								setNewCPS = c.createStatement();
+								setNewCPS.executeUpdate(setCPS);
+
+								newCursorPrice = c.createStatement();
+								newCursorPrice.executeUpdate(setCursorPrice);
+
+								updateGrandmaStatement = c.createStatement();
+								updateGrandmaStatement
+										.executeUpdate(updateGrandma);
+
+								updateCookieStatement = c.createStatement();
+								updateCookieStatement
+										.executeUpdate(updateCookie);
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+
+							return true;
+						} else {
+							player.sendMessage("Not enough cookies!");
+							return true;
+						}
+
+					} else if (args[1].equalsIgnoreCase("portal")) {
+						if (cookie.get(player.getName()).getScore() >= Integer
+								.parseInt(getPrice("portal", player))) {
+							long prize = Math.round(Integer.parseInt(getPrice(
+									"portal", player)));
+							int newPrice = (int) prize;
+							cookie.get(player.getName()).setScore(
+									cookie.get(player.getName()).getScore()
+											- newPrice);
+							portal.get(player.getName())
+									.setScore(
+											portal.get(player.getName())
+													.getScore() + 1);
+
+							long updatedCursorPrice = Math.round(newPrice
+									* growth);
+
+							// sets the overall cps
+							double newCpsInt = Double.parseDouble(this.config
+									.getString("Price.boost.Portal"))
+									+ Double.parseDouble(cps);
+
+							String newCps = String.valueOf(newCpsInt);
+
+							Statement setNewCPS;
+							String setCPS = "UPDATE `CookieClicker` SET `cookiePerSeconds` =' "
+									+ newCps
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
+
+							Statement newCursorPrice;
+							String setCursorPrice = "UPDATE `CookieClicker` SET `portalPrice` ='"
+									+ String.valueOf(updatedCursorPrice)
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateGrandmaStatement;
+							String updateGrandma = "UPDATE `CookieClicker` SET `portal` ='"
+									+ String.valueOf(grandma.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateCookieStatement;
+							String updateCookie = "UPDATE `CookieClicker` SET `cookies` ='"
+									+ String.valueOf(cookie.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+							try {
+								setNewCPS = c.createStatement();
+								setNewCPS.executeUpdate(setCPS);
+
+								newCursorPrice = c.createStatement();
+								newCursorPrice.executeUpdate(setCursorPrice);
+
+								updateGrandmaStatement = c.createStatement();
+								updateGrandmaStatement
+										.executeUpdate(updateGrandma);
+
+								updateCookieStatement = c.createStatement();
+								updateCookieStatement
+										.executeUpdate(updateCookie);
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+
+							return true;
+						} else {
+							player.sendMessage("Not enough cookies!");
+							return true;
+						}
+
+					} else if (args[1].equalsIgnoreCase("timemachine")) {
+						if (cookie.get(player.getName()).getScore() >= Integer
+								.parseInt(getPrice("time", player))) {
+							long prize = Math.round(Integer.parseInt(getPrice(
+									"time", player)));
+							int newPrice = (int) prize;
+							cookie.get(player.getName()).setScore(
+									cookie.get(player.getName()).getScore()
+											- newPrice);
+							time.get(player.getName()).setScore(
+									time.get(player.getName()).getScore() + 1);
+
+							long updatedCursorPrice = Math.round(newPrice
+									* growth);
+
+							// sets the overall cps
+							double newCpsInt = Double.parseDouble(this.config
+									.getString("Price.boost.TimeMachine"))
+									+ Double.parseDouble(cps);
+
+							String newCps = String.valueOf(newCpsInt);
+
+							Statement setNewCPS;
+							String setCPS = "UPDATE `CookieClicker` SET `cookiePerSeconds` =' "
+									+ newCps
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
+
+							Statement newCursorPrice;
+							String setCursorPrice = "UPDATE `CookieClicker` SET `timeMachinePrice` ='"
+									+ String.valueOf(updatedCursorPrice)
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateGrandmaStatement;
+							String updateGrandma = "UPDATE `CookieClicker` SET `timeMachine` ='"
+									+ String.valueOf(grandma.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateCookieStatement;
+							String updateCookie = "UPDATE `CookieClicker` SET `cookies` ='"
+									+ String.valueOf(cookie.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+							try {
+								setNewCPS = c.createStatement();
+								setNewCPS.executeUpdate(setCPS);
+
+								newCursorPrice = c.createStatement();
+								newCursorPrice.executeUpdate(setCursorPrice);
+
+								updateGrandmaStatement = c.createStatement();
+								updateGrandmaStatement
+										.executeUpdate(updateGrandma);
+
+								updateCookieStatement = c.createStatement();
+								updateCookieStatement
+										.executeUpdate(updateCookie);
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+
+							return true;
+						} else {
+							player.sendMessage("Not enough cookies!");
+							return true;
+						}
+					} else if (args[1].equalsIgnoreCase("antimatter")) {
+						if (cookie.get(player.getName()).getScore() >= Integer
+								.parseInt(getPrice("antimatter", player))) {
+							long prize = Math.round(Integer.parseInt(getPrice(
+									"antimatter", player)));
+							int newPrice = (int) prize;
+							cookie.get(player.getName()).setScore(
+									cookie.get(player.getName()).getScore()
+											- newPrice);
+							antimatter.get(player.getName())
+									.setScore(
+											grandma.get(player.getName())
+													.getScore() + 1);
+
+							long updatedCursorPrice = Math.round(newPrice
+									* growth);
+
+							// sets the overall cps
+							double newCpsInt = Double.parseDouble(this.config
+									.getString("Price.boost.Antimatter"))
+									+ Double.parseDouble(cps);
+
+							String newCps = String.valueOf(newCpsInt);
+
+							Statement setNewCPS;
+							String setCPS = "UPDATE `CookieClicker` SET `cookiePerSeconds` =' "
+									+ newCps
+									+ "' WHERE `Name` = '"
+									+ player.getName() + "'";
+
+							Statement newCursorPrice;
+							String setCursorPrice = "UPDATE `CookieClicker` SET `antimatterPrice` ='"
+									+ String.valueOf(updatedCursorPrice)
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateGrandmaStatement;
+							String updateGrandma = "UPDATE `CookieClicker` SET `antimatter` ='"
+									+ String.valueOf(grandma.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+
+							Statement updateCookieStatement;
+							String updateCookie = "UPDATE `CookieClicker` SET `cookies` ='"
+									+ String.valueOf(cookie.get(
+											player.getName()).getScore())
+									+ "' WHERE `Name` = '"
+									+ player.getName()
+									+ "'";
+							try {
+								setNewCPS = c.createStatement();
+								setNewCPS.executeUpdate(setCPS);
+
+								newCursorPrice = c.createStatement();
+								newCursorPrice.executeUpdate(setCursorPrice);
+
+								updateGrandmaStatement = c.createStatement();
+								updateGrandmaStatement
+										.executeUpdate(updateGrandma);
+
+								updateCookieStatement = c.createStatement();
+								updateCookieStatement
+										.executeUpdate(updateCookie);
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+
+							return true;
+						} else {
+							player.sendMessage("Not enough cookies!");
+							return true;
+						}
 
 					}
 
 				}
 			}
+
 		} else if (cmd.getName().equalsIgnoreCase("cookieclicker")
 				&& !(sender instanceof Player)) {
 			sender.sendMessage("This action can only be performed by a Player");
@@ -662,9 +1192,336 @@ public class CookieClicker extends JavaPlugin implements Listener {
 				&& evt.getClickedBlock().getType() == Material.STONE_BUTTON) {
 			Player p = evt.getPlayer();
 			if (scoreBoard.contains(p.getName())) {
-				cookie.get(p.getName()).setScore(cookie.get(p.getName()).getScore() + 1);
+				cookie.get(p.getName()).setScore(
+						cookie.get(p.getName()).getScore() + 1);
+
+				// Save changes in the Database
+				Statement statement;
+				try {
+					statement = c.createStatement();
+					String querySelectCookies = "UPDATE `CookieClicker` set `cookies` ='"
+							+ String.valueOf(cookie.get(p.getName()).getScore())
+							+ "' WHERE `Name`='" + p.getName() + "'";
+					statement.executeUpdate(querySelectCookies);
+				} catch (SQLException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+
 			}
 		}
+	}
+
+	public void scoreSet(Player player) {
+		Objective objective;
+		if (board.getObjective(player.getName()) == null) {
+			objective = board.registerNewObjective(player.getName(), "dummy");
+		} else {
+			objective = board.getObjective(player.getName());
+		}
+
+		player.setScoreboard(board);
+		String name = player.getName();
+		objective.setDisplayName("CookieClicker");
+		objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+
+		cookie.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "Cookies: ")));
+		cursors.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "Cursor: ")));
+		grandma.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "Grandma: ")));
+		farm.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "Farm: ")));
+		factory.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "Factory: ")));
+		mine.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "Mine: ")));
+		shipment.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "Shipment: ")));
+		alchemy.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "AlchemyLab: ")));
+		portal.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "Portal: ")));
+		time.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "TimeMachine: ")));
+		antimatter.put(
+				name,
+				objective.getScore(Bukkit.getServer().getOfflinePlayer(
+						ChatColor.GREEN + "Antimatter: ")));
+
+	}
+
+	public void playerWriter(String name) throws SQLException {
+		// replace with SQL Query
+		Statement statement = c.createStatement();
+
+		String querySelect = "SELECT `Name` FROM `CookieClicker` WHERE `Name`='"
+				+ name + "'";
+		ResultSet rs = statement.executeQuery(querySelect);
+		if (!rs.next()) {
+
+			String cursorPrice = config.getString("Cookie.prices.Cursor");
+			String grandmaPrice = config.getString("Cookie.prices.Grandma");
+			String famrPrice = config.getString("Cookie.prices.Farm");
+			String factoryPrice = config.getString("Cookie.prices.Factory");
+			String minePrice = config.getString("Cookie.prices.Mine");
+			String shipmentPrice = config.getString("Cookie.prices.Shipment");
+			String alchemyPrice = config.getString("Cookie.prices.AlchemyLab");
+			String portalPrice = config.getString("Cookie.prices.Portal");
+			String timeMachinePrice = config
+					.getString("Cookie.prices.TimeMachine");
+			String antimatterPrice = config
+					.getString("Cookie.prices.AntimatterCondenser");
+
+			String queryInsert = "INSERT INTO `CookieClicker` (`Name`,"
+					+ "`cookies`, `cursors`, `grandma`, `farm`,"
+					+ "`factory`, `mine`, `shipment`, `alchemy`,"
+					+ "`portal`, `timeMachine`, `antimatter`,"
+					+ " `cursorPrice`, `grandmaPrice`, `farmPrice`,"
+					+ "`factoryPrice`, `minePrice`, `shipmentPrice`,"
+					+ "`alchemyPrice`, `portalPrice`,"
+					+ "`timeMachinePrice`, `antimatterPrice`, `cookiePerSeconds`)"
+					+ "Values" + "('"
+					+ name
+					+ "',"
+					+ "'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', "
+					+ "'"
+					+ cursorPrice
+					+ "', "
+					+ "'"
+					+ grandmaPrice
+					+ "', "
+					+ "'"
+					+ famrPrice
+					+ "', "
+					+ "'"
+					+ factoryPrice
+					+ "', "
+					+ "'"
+					+ minePrice
+					+ "', "
+					+ "'"
+					+ shipmentPrice
+					+ "', "
+					+ "'"
+					+ alchemyPrice
+					+ "', "
+					+ "'"
+					+ portalPrice
+					+ "', "
+					+ "'"
+					+ timeMachinePrice
+					+ "', "
+					+ "'"
+					+ antimatterPrice
+					+ "', " + "'0');";
+			statement.executeUpdate(queryInsert);
+			System.out.println("Player did not exist. Added to Database");
+		}
+	}
+
+	public void leaderBoardWriter(String name) {
+		// replace with sql query
+
+		// String[] header = { "This File", "stores the stats",
+		// "required for the leaderboard" };
+		//
+		// this.configManager = new SimpleConfigManager(this);
+		// this.leaderBoard = configManager.getNewConfig(
+		// "players/leaderBoard.cookie", header);
+		//
+		// this.leaderBoard.set(name + ".Cookies", 0);
+		//
+		// this.leaderBoard.saveConfig();
+	}
+
+	public String getPrice(String name, Player player) {
+		Statement cursor;
+		Statement grandma;
+		Statement farm;
+		Statement factory;
+		Statement mine;
+		Statement shipment;
+		Statement alchemy;
+		Statement portal;
+		Statement time;
+		Statement antimatter;
+
+		if (name.equalsIgnoreCase("cursor")) {
+			String cursorGetCurrentPrice = "SELECT `cursorPrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getCursorPrice;
+
+			try {
+				cursor = c.createStatement();
+
+				getCursorPrice = cursor.executeQuery(cursorGetCurrentPrice);
+				getCursorPrice.next();
+
+				return getCursorPrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+		} else if (name.equalsIgnoreCase("grandma")) {
+			String grandmaGetCurrentPrice = "SELECT `grandmaPrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getGrandmaPrice;
+			try {
+				grandma = c.createStatement();
+				getGrandmaPrice = grandma.executeQuery(grandmaGetCurrentPrice);
+				getGrandmaPrice.next();
+				return getGrandmaPrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else if (name.equalsIgnoreCase("farm")) {
+
+			String farmGetCurrentPrice = "SELECT `farmPrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getFarmPrice;
+			try {
+				farm = c.createStatement();
+				getFarmPrice = farm.executeQuery(farmGetCurrentPrice);
+				getFarmPrice.next();
+
+				return getFarmPrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else if (name.equalsIgnoreCase("factory")) {
+
+			String factoryGetCurrentPrice = "SELECT `factoryPrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getFactoryPrice;
+			try {
+				factory = c.createStatement();
+				getFactoryPrice = factory.executeQuery(factoryGetCurrentPrice);
+				getFactoryPrice.next();
+
+				return getFactoryPrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else if (name.equalsIgnoreCase("mine")) {
+			String mineGetCurrentPrice = "SELECT `minePrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getMinePrice;
+			try {
+				mine = c.createStatement();
+				getMinePrice = mine.executeQuery(mineGetCurrentPrice);
+				getMinePrice.next();
+
+				return getMinePrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else if (name.equalsIgnoreCase("shipment")) {
+
+			String shipmentGetCurrentPrice = "SELECT `shipmentPrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getShipmentPrice;
+			try {
+				shipment = c.createStatement();
+				getShipmentPrice = shipment
+						.executeQuery(shipmentGetCurrentPrice);
+				getShipmentPrice.next();
+
+				return getShipmentPrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else if (name.equalsIgnoreCase("alchemy")) {
+
+			String alchemyGetCurrentPrice = "SELECT `alchemyPrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getAlchemyPrice;
+			try {
+				alchemy = c.createStatement();
+				getAlchemyPrice = alchemy.executeQuery(alchemyGetCurrentPrice);
+				getAlchemyPrice.next();
+
+				return getAlchemyPrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else if (name.equalsIgnoreCase("portal")) {
+
+			String portalGetCurrentPrice = "SELECT `portalPrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getPortalPrice;
+			try {
+				portal = c.createStatement();
+				getPortalPrice = portal.executeQuery(portalGetCurrentPrice);
+				getPortalPrice.next();
+
+				return getPortalPrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else if (name.equalsIgnoreCase("time")) {
+
+			String timeGetCurrentPrice = "SELECT `timeMachinePrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getTimePrice;
+			try {
+				time = c.createStatement();
+				getTimePrice = time.executeQuery(timeGetCurrentPrice);
+				getTimePrice.next();
+
+				return getTimePrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		} else if (name.equalsIgnoreCase("antimatter")) {
+
+			String antimatterGetCurrentPrice = "SELECT `antimatterPrice` FROM `CookieClicker` WHERE `Name`='"
+					+ player.getName() + "'";
+			ResultSet getAntimatterPrice;
+			try {
+				antimatter = c.createStatement();
+				getAntimatterPrice = antimatter
+						.executeQuery(antimatterGetCurrentPrice);
+				getAntimatterPrice.next();
+
+				return getAntimatterPrice.getString(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+
+		return "";
 	}
 
 }
