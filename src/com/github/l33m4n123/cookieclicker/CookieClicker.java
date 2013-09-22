@@ -9,16 +9,9 @@ import java.util.HashSet;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
-import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.Listener;
-import org.bukkit.event.block.Action;
-import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.player.PlayerLoginEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -28,6 +21,7 @@ import org.bukkit.scoreboard.Score;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.ScoreboardManager;
 
+import com.github.l33m4n123.cookieclicker.EventHandlers.PlayerEventHandler;
 import com.github.l33m4n123.cookieclicker.config.ConfigWriter;
 
 import code.husky.mysql.MySQL;
@@ -35,11 +29,11 @@ import code.husky.mysql.MySQL;
 /**
  * @author: Leeman;
  */
-public class CookieClicker extends JavaPlugin implements Listener {
+public class CookieClicker extends JavaPlugin {
 
 	// Some declarations that I am going to need
 
-	protected ConfigWriter config = new ConfigWriter();
+	public static ConfigWriter config = new ConfigWriter();
 
 	private String host;
 	private String port;
@@ -49,15 +43,15 @@ public class CookieClicker extends JavaPlugin implements Listener {
 
 	private Plugin plugin = this;
 	private MySQL mySQL;
-	private Connection c = null;
+	public static Connection c = null;
 
 	private double growth;
 
 	ScoreboardManager manager;
 	Scoreboard board;
-
-	private static HashSet<String> scoreBoard = new HashSet<String>();
-	private HashMap<String, Score> cookie = new HashMap<String, Score>();
+	
+	public static HashSet<String> scoreBoard = new HashSet<String>();
+	public static HashMap<String, Score> cookie = new HashMap<String, Score>();
 	private HashMap<String, Score> cursors = new HashMap<String, Score>();
 	private HashMap<String, Score> grandma = new HashMap<String, Score>();
 	private HashMap<String, Score> farm = new HashMap<String, Score>();
@@ -69,13 +63,16 @@ public class CookieClicker extends JavaPlugin implements Listener {
 	private HashMap<String, Score> time = new HashMap<String, Score>();
 	private HashMap<String, Score> antimatter = new HashMap<String, Score>();
 
-	static HashSet<String> score = new HashSet<String>();
+	public static  HashSet<String> score = new HashSet<String>();
 
 	@Override
 	public void onEnable() {
 		// TODO Insert logic to be performed when the plugin is enabled
 		manager = Bukkit.getScoreboardManager();
-		getServer().getPluginManager().registerEvents(this, this);
+		
+		getServer().getPluginManager().registerEvents(new PlayerEventHandler(this), this);
+		
+		
 		config.configWriter(this);
 
 		this.host = config.getString("Database.host");
@@ -115,39 +112,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 		cookieCheck();
 
 	}
-
-	// Adds the player into the database
-	@EventHandler
-	public void onPlayerLogin(PlayerLoginEvent evt) {
-		final Player player = evt.getPlayer();
-		this.getServer().getScheduler()
-				.scheduleSyncDelayedTask(this, new BukkitRunnable() {
-
-					@Override
-					public void run() {
-						player.setScoreboard(Bukkit.getServer()
-								.getScoreboardManager().getNewScoreboard());
-
-					}
-				}, 1L);
-
-		try {
-			playerWriter(evt.getPlayer().getName());
-		} catch (SQLException e) {
-			e.printStackTrace();
-		}
-	}
-
-	@EventHandler
-	public void onPlayerLogout(PlayerQuitEvent evt) {
-		Player player = evt.getPlayer();
-		player.setScoreboard(Bukkit.getServer().getScoreboardManager()
-				.getNewScoreboard());
-		if (scoreBoard.contains(player.getName())) {
-			scoreBoard.remove(player.getName());
-		}
-	}
-
+	
 	public void cookieCheck() {
 		this.getServer().getScheduler()
 				.scheduleSyncRepeatingTask(this, new BukkitRunnable() {
@@ -403,7 +368,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 					objective.setDisplaySlot(DisplaySlot.SIDEBAR);
 					objective.setDisplayName(player.getName());
 					scoreSet(player);
-					this.cookie.get(player.getName()).setScore(cookies);
+					cookie.get(player.getName()).setScore(cookies);
 					this.cursors.get(player.getName()).setScore(cursor);
 					this.grandma.get(player.getName()).setScore(grandma);
 					this.farm.get(player.getName()).setScore(farm);
@@ -506,7 +471,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 									* growth);
 
 							// sets the overall cps
-							double newCpsInt = Double.parseDouble(this.config
+							double newCpsInt = Double.parseDouble(config
 									.getString("Price.boost.Cursor"))
 									+ Double.parseDouble(cps);
 
@@ -584,7 +549,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 									* growth);
 
 							// sets the overall cps
-							double newCpsInt = Double.parseDouble(this.config
+							double newCpsInt = Double.parseDouble(config
 									.getString("Price.boost.Grandma"))
 									+ Double.parseDouble(cps);
 
@@ -659,7 +624,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 									* growth);
 
 							// sets the overall cps
-							double newCpsInt = Double.parseDouble(this.config
+							double newCpsInt = Double.parseDouble(config
 									.getString("Price.boost.Farm"))
 									+ Double.parseDouble(cps);
 
@@ -735,7 +700,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 									* growth);
 
 							// sets the overall cps
-							double newCpsInt = Double.parseDouble(this.config
+							double newCpsInt = Double.parseDouble(config
 									.getString("Price.boost.Factory"))
 									+ Double.parseDouble(cps);
 
@@ -810,7 +775,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 									* growth);
 
 							// sets the overall cps
-							double newCpsInt = Double.parseDouble(this.config
+							double newCpsInt = Double.parseDouble(config
 									.getString("Price.boost.Shipment"))
 									+ Double.parseDouble(cps);
 
@@ -886,7 +851,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 									* growth);
 
 							// sets the overall cps
-							double newCpsInt = Double.parseDouble(this.config
+							double newCpsInt = Double.parseDouble(config
 									.getString("Price.boost.AlchemyLab"))
 									+ Double.parseDouble(cps);
 
@@ -963,7 +928,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 									* growth);
 
 							// sets the overall cps
-							double newCpsInt = Double.parseDouble(this.config
+							double newCpsInt = Double.parseDouble(config
 									.getString("Price.boost.Portal"))
 									+ Double.parseDouble(cps);
 
@@ -1038,7 +1003,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 									* growth);
 
 							// sets the overall cps
-							double newCpsInt = Double.parseDouble(this.config
+							double newCpsInt = Double.parseDouble(config
 									.getString("Price.boost.TimeMachine"))
 									+ Double.parseDouble(cps);
 
@@ -1114,7 +1079,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 									* growth);
 
 							// sets the overall cps
-							double newCpsInt = Double.parseDouble(this.config
+							double newCpsInt = Double.parseDouble(config
 									.getString("Price.boost.Antimatter"))
 									+ Double.parseDouble(cps);
 
@@ -1186,32 +1151,6 @@ public class CookieClicker extends JavaPlugin implements Listener {
 		return false;
 	}
 
-	@EventHandler
-	public void onButtonPress(PlayerInteractEvent evt) {
-		if (evt.getAction() == Action.RIGHT_CLICK_BLOCK
-				&& evt.getClickedBlock().getType() == Material.STONE_BUTTON) {
-			Player p = evt.getPlayer();
-			if (scoreBoard.contains(p.getName())) {
-				cookie.get(p.getName()).setScore(
-						cookie.get(p.getName()).getScore() + 1);
-
-				// Save changes in the Database
-				Statement statement;
-				try {
-					statement = c.createStatement();
-					String querySelectCookies = "UPDATE `CookieClicker` set `cookies` ='"
-							+ String.valueOf(cookie.get(p.getName()).getScore())
-							+ "' WHERE `Name`='" + p.getName() + "'";
-					statement.executeUpdate(querySelectCookies);
-				} catch (SQLException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-
-			}
-		}
-	}
-
 	public void scoreSet(Player player) {
 		Objective objective;
 		if (board.getObjective(player.getName()) == null) {
@@ -1272,7 +1211,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 
 	}
 
-	public void playerWriter(String name) throws SQLException {
+	public static void playerWriter(String name) throws SQLException {
 		// replace with SQL Query
 		Statement statement = c.createStatement();
 
@@ -1347,7 +1286,7 @@ public class CookieClicker extends JavaPlugin implements Listener {
 		// String[] header = { "This File", "stores the stats",
 		// "required for the leaderboard" };
 		//
-		// this.configManager = new SimpleConfigManager(this);
+		// configManager = new SimpleConfigManager(this);
 		// this.leaderBoard = configManager.getNewConfig(
 		// "players/leaderBoard.cookie", header);
 		//
